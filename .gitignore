@@ -2,3 +2,4 @@ models/
 .idea/
 rec_files
 testPy/
+.DS_Store

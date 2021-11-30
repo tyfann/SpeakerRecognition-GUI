@@ -1,0 +1,129 @@
+from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QPlainTextEdit, QWidget
+from PyQt5 import uic
+import sounddevice as sd
+import numpy as np
+import pandas as pd
+import os, glob, shutil, sys, soundfile, torch, warnings, importlib, argparse, copy
+from scipy.io.wavfile import write
+
+def get_index_to_name(input_list):
+    output_list = copy.deepcopy(input_list)
+    for i in range(len(output_list)):
+        output_list[i] = output_list[i].split('/')[-1].split('-')[0]
+    return output_list
+
+def mkdir(path):
+    folder = os.path.exists(path)
+    if not folder:             
+        os.makedirs(path)   
+
+def loadWAV(filename):
+    audio, sr = soundfile.read(filename)
+    if len(audio.shape) == 2: # dual channel will select the first channel
+        audio = audio[:,0]
+    feat = np.stack([audio],axis=0).astype(np.float)
+    feat = torch.FloatTensor(feat)
+    return feat
+
+def loadPretrain(model, pretrain_model):
+    self_state = model.state_dict()
+    # if using on cuda
+    # loaded_state = torch.load(pretrain_model, map_location={'cuda:1':'cuda:0'})
+
+    # if using on cpu
+    loaded_state = torch.load(pretrain_model, map_location="cpu")
+    for name, param in loaded_state.items():
+        origname = name;    
+        if name not in self_state:
+            name = name.replace("__S__.", "")
+            if name not in self_state:
+                continue;    
+        self_state[name].copy_(param)
+    self_state = model.state_dict()
+    return model
+
+feat_enroll_list = []
+
+class mainwindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        # PyQt5
+        self.ui=uic.loadUi("ui/mainLayout.ui")
+        # 这里与静态载入不同，使用 self.ui.show()
+        # 如果使用 self.show(),会产生一个空白的 MainWindow
+        # self.ui.enrollButton.clicked.connect(self.enrollVoice)
+        self.ui.testButton.clicked.connect(self.testVoice)
+        # self.ui.show()
+    
+    def testVoice(self):
+        enroll_id = self.ui.textEdit.toPlainText()
+        fs = 44100 # 采样率44100/48000帧
+        sd.default.samplerate = fs
+        sd.default.channels = 1
+        # duration = int(input("Enter the time duration in second: ")) # 持续时间
+        duration = 2.5
+        myrecording = sd.rec(int(duration * fs)) # 录制音频
+        sd.wait() # 阻塞
+
+        audio = "rec_files/test/1_test.wav"
+        write(audio,fs,myrecording)
+
+        feat_test = model(loadWAV(audio)).detach()
+        feat_test = torch.nn.functional.normalize(feat_test, p=2, dim=1)
+        max_score = float('-inf')
+        max_audio = ''
+        enroll_audios = glob.glob('rec_files/enroll/*.wav')
+        for i, enroll_audio in enumerate(enroll_audios):
+            score = float(np.round(- torch.nn.functional.pairwise_distance(feat_enroll_list[i].unsqueeze(-1), feat_test.unsqueeze(-1).transpose(0,2)).detach().numpy(), 4))
+            if max_score < score:
+                max_score = score
+                max_audio = enroll_audio.split('/')[-1]
+        self.ui.textEdit.setPlaceholderText(max_audio.split('_')[0])
+
+class enrollwindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        # PyQt5
+        self.ui=uic.loadUi("ui/enrollLayout.ui")
+        # 这里与静态载入不同，使用 self.ui.show()
+        # 如果使用 self.show(),会产生一个空白的 MainWindow
+        self.ui.recordButton.clicked.connect(self.recordVoice)
+        # self.ui.show()
+
+    def recordVoice(self):
+        
+        enroll_id = self.ui.textEdit.toPlainText()
+        fs = 44100 # 采样率44100/48000帧
+        sd.default.samplerate = fs
+        sd.default.channels = 1
+        # duration = int(input("Enter the time duration in second: ")) # 持续时间
+        duration = 2.5
+        myrecording = sd.rec(int(duration * fs)) # 录制音频
+        sd.wait() # 阻塞
+
+        audio = "rec_files/enroll/"+str(enroll_id)+"_enroll.wav"
+        write(audio,fs,myrecording)
+        with torch.no_grad():
+            feat_enroll = model(loadWAV(audio)).detach()
+            feat_enroll = torch.nn.functional.normalize(feat_enroll, p=2, dim=1)
+            feat_enroll_list.append(feat_enroll)
+
+
+
+if __name__=="__main__":
+
+    warnings.filterwarnings("ignore")
+    SpeakerNetModel = importlib.import_module('models.ResNetSE34V2').__getattribute__('MainModel')
+    global model
+    model = SpeakerNetModel()
+    model = loadPretrain(model, 'models/pretrain.model')
+    mkdir('rec_files/enroll')
+    mkdir('rec_files/test')
+
+    app = QApplication([])
+    mainWin = mainwindow()
+    enrollWin = enrollwindow()
+
+    mainWin.ui.show()
+    mainWin.ui.enrollButton.clicked.connect(enrollWin.ui.show)
+    sys.exit(app.exec_())

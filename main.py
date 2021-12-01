@@ -61,6 +61,8 @@ class mainWindow(QWidget):
         # self.ui.show()
 
     def slot_testButton(self):
+        # self.rt = EnrollThread(text)
+        # self.rt.start()
         my_t = threading.Thread(target=self.testVoice())
         my_t.start()
 
@@ -105,12 +107,13 @@ class enrollWindow(QWidget):
         # self.ui.show()
 
     def slot_recordButton(self):
-        if len(self.ui.lineEdit.text()) == 0:
+        text = self.ui.lineEdit.text()
+        if len(text) == 0:
             messageBox = QMessageBox(self)
             messageBox.information(self, "警告", "未输入注册录音用户名称!", QMessageBox.Ok)
             return
-        # self.rt = EnrollThread()
-        # self.rt.start()
+        # self.et = EnrollThread(text)
+        # self.et.start()
         my_t = threading.Thread(target=self.recordVoice())
         my_t.start()
 
@@ -132,21 +135,13 @@ class enrollWindow(QWidget):
 
 
 class RecoThread(QThread):
-    def __init__(self):
+    def __init__(self, test_id):
         super(RecoThread, self).__init__()
+        self.test_id = test_id
 
     def run(self):
         w = mainWindow()
         w.testVoice()
-
-
-class EnrollThread(QThread):
-    def __init__(self):
-        super(EnrollThread, self).__init__()
-
-    def run(self):
-        w = enrollWindow()
-        w.recordVoice()
 
 
 if __name__ == "__main__":

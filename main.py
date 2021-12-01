@@ -1,3 +1,6 @@
+import time
+from queue import Queue
+
 from PyQt5.Qt import (QApplication, QMainWindow, QPushButton, QPlainTextEdit,
                       QWidget, QThread, QMessageBox, QLineEdit, QMutex)
 from PyQt5 import uic
@@ -51,39 +54,58 @@ def loadPretrain(model, pretrain_model):
 
 
 feat_enroll_list = []
+semaphore = threading.Semaphore(0)
 
 
 class mainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.ui = uic.loadUi("ui/mainLayout.ui")
-        self.ui.testButton.clicked.connect(self.slot_testButton)
+        # self.ui.show()
+
+
+class testWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.audio = Queue()
+        self.ui = uic.loadUi("ui/testLayout.ui")
+        self.ui.recordButton.clicked.connect(self.slot_testButton)
+        self.ui.endButton.clicked.connect(self.slot_endButton)
         # self.ui.show()
 
     def slot_testButton(self):
-        # self.rt = EnrollThread(text)
-        # self.rt.start()
-        my_t = threading.Thread(target=self.testVoice())
-        my_t.start()
 
-    def testVoice(self):
-        # while True:
-        fs = 44100  # 采样率44100/48000帧
-        sd.default.samplerate = fs
-        sd.default.channels = 1
-        # duration = int(input("Enter the time duration in second: ")) # 持续时间
-        duration = 4
-        myrecording = sd.rec(int(duration * fs))  # 录制音频
-        sd.wait()  # 阻塞
+        my_rt1 = threading.Thread(target=self.recordVoice())
+        my_rt2 = threading.Thread(target=self.recordVoice())
+        my_vt = threading.Thread(target=self.validateVoice())
+        my_rt1.start()
+        my_vt.start()
+        time.sleep(2)
+        my_rt2.start()
 
-        time = datetime.datetime.now()
-        self.audio = "rec_files/test/"+str(time)+"_test.wav"
-        write(self.audio, fs, myrecording)
-        my_t = threading.Thread(target=self.validateVoice())
-        my_t.start()
+    def slot_endButton(self):
+        # 终止录音
+        print("stopped")
+
+    def recordVoice(self):
+        while True:
+            fs = 44100  # 采样率44100/48000帧
+            sd.default.samplerate = fs
+            sd.default.channels = 1
+            # duration = int(input("Enter the time duration in second: ")) # 持续时间
+            duration = 4
+            myrecording = sd.rec(int(duration * fs))  # 录制音频
+            sd.wait()  # 阻塞
+
+            time = datetime.datetime.now()
+            audio = "rec_files/test/" + str(time) + "_test.wav"
+            write(audio, fs, myrecording)
+            self.audio.put(audio)
+            semaphore.release()
 
     def validateVoice(self):
-        feat_test = model(loadWAV(self.audio)).detach()
+        semaphore.acquire()
+        feat_test = model(loadWAV(self.audio.get())).detach()
         feat_test = torch.nn.functional.normalize(feat_test, p=2, dim=1)
         max_score = float('-inf')
         max_audio = ''
@@ -97,6 +119,7 @@ class mainWindow(QWidget):
                 max_score = score
                 max_audio = enroll_audio.split('/')[-1]
         self.ui.textEdit.setPlaceholderText(max_audio.split('_')[0])
+        semaphore.release()
 
 
 class enrollWindow(QWidget):
@@ -156,7 +179,9 @@ if __name__ == "__main__":
     app = QApplication([])
     mainWin = mainWindow()
     enrollWin = enrollWindow()
+    testWin = testWindow()
 
     mainWin.ui.show()
     mainWin.ui.enrollButton.clicked.connect(enrollWin.ui.show)
+    mainWin.ui.testButton.clicked.connect(testWin.ui.show)
     sys.exit(app.exec_())

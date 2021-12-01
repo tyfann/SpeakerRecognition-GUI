@@ -13,24 +13,19 @@
   <property name="windowTitle">
    <string>声纹识别</string>
   </property>
-  <widget class="QPlainTextEdit" name="textEdit">
-   <property name="geometry">
-    <rect>
-     <x>180</x>
-     <y>60</y>
-     <width>191</width>
-     <height>111</height>
-    </rect>
-   </property>
-  </widget>
   <widget class="QPushButton" name="enrollButton">
    <property name="geometry">
     <rect>
-     <x>200</x>
-     <y>220</y>
-     <width>131</width>
-     <height>51</height>
+     <x>190</x>
+     <y>120</y>
+     <width>161</width>
+     <height>71</height>
     </rect>
+   </property>
+   <property name="font">
+    <font>
+     <pointsize>15</pointsize>
+    </font>
    </property>
    <property name="text">
     <string>注册录音</string>
@@ -39,11 +34,16 @@
   <widget class="QPushButton" name="testButton">
    <property name="geometry">
     <rect>
-     <x>200</x>
-     <y>290</y>
-     <width>131</width>
-     <height>51</height>
+     <x>190</x>
+     <y>230</y>
+     <width>161</width>
+     <height>71</height>
     </rect>
+   </property>
+   <property name="font">
+    <font>
+     <pointsize>15</pointsize>
+    </font>
    </property>
    <property name="text">
     <string>测试录音</string>

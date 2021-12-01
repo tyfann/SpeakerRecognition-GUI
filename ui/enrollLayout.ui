@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>注册录音</string>
+   <string>注册界面</string>
   </property>
   <widget class="QPushButton" name="recordButton">
    <property name="geometry">

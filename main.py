@@ -1,8 +1,10 @@
 import time
+import pyaudio
+import wave
 from queue import Queue
 
-from PyQt5.Qt import (QApplication, QMainWindow, QPushButton, QPlainTextEdit,
-                      QWidget, QThread, QMessageBox, QLineEdit, QMutex)
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QPushButton, QPlainTextEdit,
+                      QWidget, QMessageBox, QLineEdit)
 from PyQt5 import uic
 import sounddevice as sd
 import numpy as np
@@ -11,7 +13,6 @@ import os, glob, shutil, sys, soundfile, torch, warnings, importlib, argparse, c
 from scipy.io.wavfile import write
 import threading
 import datetime
-
 
 def get_index_to_name(input_list):
     output_list = copy.deepcopy(input_list)
@@ -54,8 +55,56 @@ def loadPretrain(model, pretrain_model):
 
 
 feat_enroll_list = []
-semaphore = threading.Semaphore(0)
 
+class Recorder(QWidget):
+    def __init__(self, chunk=1024, channels=1, rate=44100):
+        super().__init__()
+        self.CHUNK = chunk
+        self.FORMAT = pyaudio.paInt16
+        self.CHANNELS = channels
+        self.RATE = rate
+        self._running = True
+        self._frames = []
+
+    def start(self):
+        threading._start_new_thread(self.__recording, ())
+    
+    def __recording(self):
+        self._running = True
+        self._frames = []
+        p = pyaudio.PyAudio()
+        stream = p.open(format=self.FORMAT,
+                channels=self.CHANNELS,
+                rate=self.RATE,
+                input=True,
+                frames_per_buffer=self.CHUNK)
+        while(self._running):
+            data = stream.read(self.CHUNK)
+            self._frames.append(data)
+
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+  
+    def stop(self):
+        self._running = False
+
+    def save(self, filename): 
+        p = pyaudio.PyAudio()
+        if not filename.endswith(".wav"):
+            filename = filename + ".wav"
+        wf = wave.open(filename, 'wb')
+        wf.setnchannels(self.CHANNELS)
+        wf.setsampwidth(p.get_sample_size(self.FORMAT))
+        wf.setframerate(self.RATE)
+        wf.writeframes(b''.join(self._frames))
+        wf.close()
+        with torch.no_grad():
+            feat_enroll = model(loadWAV(filename)).detach()
+            feat_enroll = torch.nn.functional.normalize(feat_enroll, p=2, dim=1)
+            feat_enroll_list.append(feat_enroll)
+        messageBox = QMessageBox(self)
+        messageBox.information(self, "成功", "已保存录音!", QMessageBox.Ok)
 
 class mainWindow(QWidget):
     def __init__(self):
@@ -101,10 +150,8 @@ class testWindow(QWidget):
             audio = "rec_files/test/" + str(time) + "_test.wav"
             write(audio, fs, myrecording)
             self.audio.put(audio)
-            semaphore.release()
 
     def validateVoice(self):
-        semaphore.acquire()
         feat_test = model(loadWAV(self.audio.get())).detach()
         feat_test = torch.nn.functional.normalize(feat_test, p=2, dim=1)
         max_score = float('-inf')
@@ -119,52 +166,44 @@ class testWindow(QWidget):
                 max_score = score
                 max_audio = enroll_audio.split('/')[-1]
         self.ui.textEdit.setPlaceholderText(max_audio.split('_')[0])
-        semaphore.release()
 
+recQueue = Queue()
 
 class enrollWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.ui = uic.loadUi("ui/enrollLayout.ui")
         self.ui.recordButton.clicked.connect(self.slot_recordButton)
+        self.ui.endButton.clicked.connect(self.slot_endButton)
+        self.ui.endButton.setEnabled(False)
+        # self.ui.recordButton.clicked.connect(self.slot_recordButton)
         # self.ui.show()
 
+    # 开始录音
     def slot_recordButton(self):
-        text = self.ui.lineEdit.text()
-        if len(text) == 0:
+        self.text = self.ui.lineEdit.text()
+        if len(self.text) == 0:
             messageBox = QMessageBox(self)
             messageBox.information(self, "警告", "未输入注册录音用户名称!", QMessageBox.Ok)
             return
-        # self.et = EnrollThread(text)
-        # self.et.start()
-        my_t = threading.Thread(target=self.recordVoice())
-        my_t.start()
 
-    def recordVoice(self):
-        enroll_id = self.ui.lineEdit.text()
-        fs = 44100  # 采样率44100/48000帧
-        sd.default.samplerate = fs
-        sd.default.channels = 1
-        duration = 2.5
-        myrecording = sd.rec(int(duration * fs))  # 录制音频
-        sd.wait()  # 阻塞
-
-        audio = "rec_files/enroll/" + str(enroll_id) + "_enroll.wav"
-        write(audio, fs, myrecording)
-        with torch.no_grad():
-            feat_enroll = model(loadWAV(audio)).detach()
-            feat_enroll = torch.nn.functional.normalize(feat_enroll, p=2, dim=1)
-            feat_enroll_list.append(feat_enroll)
-
-
-class RecoThread(QThread):
-    def __init__(self, test_id):
-        super(RecoThread, self).__init__()
-        self.test_id = test_id
-
-    def run(self):
-        w = mainWindow()
-        w.testVoice()
+        rec = Recorder()
+        recQueue.put(rec)
+        rec.start()
+        self.ui.recordButton.setEnabled(False)
+        self.ui.endButton.setEnabled(True)
+    
+    # 结束录音
+    def slot_endButton(self):
+        if recQueue.qsize == 0:
+            messageBox = QMessageBox(self)
+            messageBox.information(self, "警告", "未开始录音!", QMessageBox.Ok)
+            return
+        rec = recQueue.get()
+        rec.stop()
+        rec.save("rec_files/enroll/"+str(self.text)+"_enroll")
+        self.ui.recordButton.setEnabled(True)
+        self.ui.endButton.setEnabled(False)
 
 
 if __name__ == "__main__":

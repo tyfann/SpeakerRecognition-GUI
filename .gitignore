@@ -3,3 +3,4 @@ models/
 rec_files
 testPy/
 .DS_Store
+__pycache__/

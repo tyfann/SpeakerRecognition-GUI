@@ -15,6 +15,7 @@ class Recorder():
         threading._start_new_thread(self.__recording, ())
     
     def __recording(self):
+        # print("record current_thread: "+threading.current_thread().getName())
         self._running = True
         self._frames = []
         p = pyaudio.PyAudio()

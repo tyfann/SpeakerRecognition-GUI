@@ -15,25 +15,42 @@ import datetime
 feat_enroll_list = []
 
 
-class mainWindow(QWidget):
+class mainWindow(QMainWindow):
+
     def __init__(self):
-        super().__init__()
-        self.ui = uic.loadUi("ui/mainLayout.ui")
+        super(mainWindow, self).__init__()
+        uic.loadUi("ui/mainLayout.ui",self)
+        # self.ui = uic.loadUi("ui/mainLayout.ui")
+        # self.ui.show()
+
+    def closeEvent(self,e):
+        reply = QMessageBox.question(self, '提示',
+                    "是否要关闭所有窗口?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            e.accept()
+            sys.exit(0)   # 退出程序
+        else:
+            e.ignore()
+
 
 
 class testWindow(QWidget):
     def __init__(self):
-        super().__init__()
-        self.ui = uic.loadUi("ui/testLayout.ui")
-        self.ui.recordButton.clicked.connect(self.slot_recordButton)
-        self.ui.endButton.clicked.connect(self.slot_endButton)
-        self.ui.recordButton.setEnabled(True)
-        self.ui.endButton.setEnabled(False)
+        super(testWindow, self).__init__()
+        uic.loadUi("ui/testLayout.ui",self)
+        # self.ui = uic.loadUi("ui/testLayout.ui")
+        self.recordButton.clicked.connect(self.slot_recordButton)
+        self.endButton.clicked.connect(self.slot_endButton)
+        self.recordButton.setEnabled(True)
+        self.endButton.setEnabled(False)
+        self._running = False
 
     def slot_recordButton(self):
         self._running = True
-        self.ui.recordButton.setEnabled(False)
-        self.ui.endButton.setEnabled(True)
+        self.recordButton.setEnabled(False)
+        self.endButton.setEnabled(True)
         threading._start_new_thread(self.__record, ())
 
     def __record(self):
@@ -42,11 +59,30 @@ class testWindow(QWidget):
         time.sleep(2)
         threading._start_new_thread(self.loop_record, ())
 
+    def closeEvent(self, event):
+        """我们创建了一个消息框，上面有俩按钮：Yes和No.第一个字符串显示在消息框的标题栏，第二个字符串显示在对话框，
+                    第三个参数是消息框的俩按钮，最后一个参数是默认按钮，这个按钮是默认选中的。返回值在变量reply里。"""
+
+        if self._running:
+            messageBox = QMessageBox(self)
+            messageBox.information(self, "警告", "还在录音!", QMessageBox.Ok)
+            event.ignore()
+            return
+        
+        # reply = QMessageBox.question(self, 'Message',"Are you sure to quit?",
+        #                                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        # # 判断返回值，如果点击的是Yes按钮，我们就关闭组件和应用，否则就忽略关闭事件
+        # if reply == QMessageBox.Yes:
+        #     event.accept()
+        # else:
+        #     event.ignore()
 
     def loop_record(self):
-        rec = Recorder()
+        
         while self._running:
+            rec = Recorder()
             rec.start()
+            print("current_thread: "+threading.current_thread().getName()+"\nstartTime: "+str(datetime.datetime.now()))
             time.sleep(4)
             rec.stop()
             audio = "rec_files/test/"+str(datetime.datetime.now())+"_test.wav"
@@ -68,8 +104,8 @@ class testWindow(QWidget):
 
         messageBox = QMessageBox(self)
         messageBox.information(self, "成功", "结束测试!", QMessageBox.Ok)
-        self.ui.recordButton.setEnabled(True)
-        self.ui.endButton.setEnabled(False)
+        self.recordButton.setEnabled(True)
+        self.endButton.setEnabled(False)
 
     def test(self, audio):
         threading._start_new_thread(self.__validate, (audio, ))
@@ -88,31 +124,33 @@ class testWindow(QWidget):
             if max_score < score:
                 max_score = score
                 max_audio = enroll_audio.split('/')[-1]
-        self.ui.lineEdit.setText(max_audio.split('_')[0])
+        self.lineEdit.setText(max_audio.split('_')[0])
 
 
 class enrollWindow(QWidget):
     def __init__(self):
-        super().__init__()
-        self.ui = uic.loadUi("ui/enrollLayout.ui")
-        self.ui.recordButton.clicked.connect(self.slot_recordButton)
-        self.ui.endButton.clicked.connect(self.slot_endButton)
-        self.ui.endButton.setEnabled(False)
+        super(enrollWindow, self).__init__()
+        uic.loadUi("ui/enrollLayout.ui",self)
+        # self.ui = uic.loadUi("ui/enrollLayout.ui")
+        self.recordButton.clicked.connect(self.slot_recordButton)
+        self.endButton.clicked.connect(self.slot_endButton)
+        self.endButton.setEnabled(False)
+        self._running = False
         # self.ui.recordButton.clicked.connect(self.slot_recordButton)
         # self.ui.show()
 
     # 开始录音
     def slot_recordButton(self):
-        self.text = self.ui.lineEdit.text()
+        self.text = self.lineEdit.text()
         if len(self.text) == 0:
             messageBox = QMessageBox(self)
             messageBox.information(self, "警告", "未输入注册录音用户名称!", QMessageBox.Ok)
             return
-
+        self._running = True
         self.rec = Recorder()
         self.rec.start()
-        self.ui.recordButton.setEnabled(False)
-        self.ui.endButton.setEnabled(True)
+        self.recordButton.setEnabled(False)
+        self.endButton.setEnabled(True)
     
     # 结束录音
     def slot_endButton(self):
@@ -120,15 +158,34 @@ class enrollWindow(QWidget):
         #     messageBox = QMessageBox(self)
         #     messageBox.information(self, "警告", "未开始录音!", QMessageBox.Ok)
         #     return
+        self._running = False
         self.rec.stop()
         audio = "rec_files/enroll/"+str(self.text)+"_enroll.wav"
         self.rec.save(audio)
         self.train(audio)
         messageBox = QMessageBox(self)
         messageBox.information(self, "成功", "已保存录音!", QMessageBox.Ok)
-        self.ui.recordButton.setEnabled(True)
-        self.ui.endButton.setEnabled(False)
+        self.recordButton.setEnabled(True)
+        self.endButton.setEnabled(False)
     
+    def closeEvent(self, event):
+        """我们创建了一个消息框，上面有俩按钮：Yes和No.第一个字符串显示在消息框的标题栏，第二个字符串显示在对话框，
+                    第三个参数是消息框的俩按钮，最后一个参数是默认按钮，这个按钮是默认选中的。返回值在变量reply里。"""
+
+        if self._running:
+            messageBox = QMessageBox(self)
+            messageBox.information(self, "警告", "还在录音!", QMessageBox.Ok)
+            event.ignore()
+            return
+        
+        # reply = QMessageBox.question(self, 'Message',"Are you sure to quit?",
+        #                                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        # # 判断返回值，如果点击的是Yes按钮，我们就关闭组件和应用，否则就忽略关闭事件
+        # if reply == QMessageBox.Yes:
+        #     event.accept()
+        # else:
+        #     event.ignore()
+
     def train(self, audio):
         threading._start_new_thread(self.__enroll, (audio, ))
     
@@ -150,12 +207,13 @@ if __name__ == "__main__":
     mkdir('rec_files/enroll')
     mkdir('rec_files/test')
 
-    app = QApplication([])
+    app = QApplication(sys.argv)
     mainWin = mainWindow()
     enrollWin = enrollWindow()
     testWin = testWindow()
 
-    mainWin.ui.show()
-    mainWin.ui.enrollButton.clicked.connect(enrollWin.ui.show)
-    mainWin.ui.testButton.clicked.connect(testWin.ui.show)
+    # mainWin.ui.show()
+    mainWin.show()
+    mainWin.enrollButton.clicked.connect(enrollWin.show)
+    mainWin.testButton.clicked.connect(testWin.show)
     sys.exit(app.exec_())

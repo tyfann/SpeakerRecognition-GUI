@@ -12,7 +12,6 @@ from scipy.io.wavfile import write
 import threading
 import datetime
 
-feat_enroll_list = []
 
 
 class mainWindow(QMainWindow):
@@ -79,18 +78,22 @@ class testWindow(QWidget):
 
     def loop_record(self):
         
+        file_name = [str(x) for x in range(10)]
+        count = 0
         while self._running:
             rec = Recorder()
             rec.start()
-            print("current_thread: "+threading.current_thread().getName()+"\nstartTime: "+str(datetime.datetime.now()))
+            # print("current_thread: "+threading.current_thread().getName()+"\nstartTime: "+str(datetime.datetime.now()))
             time.sleep(4)
             rec.stop()
-            audio = "rec_files/test/"+str(datetime.datetime.now())+"_test.wav"
+            audio = "rec_files/test/"+threading.current_thread().getName()+"_"+file_name[count]+"_test.wav"
             rec.save(audio)
+            count += 1
+            count %= 10
             self.test(audio)
 
         rec.stop()
-        audio = "rec_files/test/"+str(datetime.datetime.now())+"_test.wav"
+        audio = "rec_files/test/"+threading.current_thread().getName()+"_"+file_name[count]+"_test.wav"
         rec.save(audio)
 
 
@@ -115,16 +118,22 @@ class testWindow(QWidget):
         feat_test = torch.nn.functional.normalize(feat_test, p=2, dim=1)
         max_score = float('-inf')
         max_audio = ''
-        enroll_audios = glob.glob('rec_files/enroll/*.wav')
+        # enroll_audios = glob.glob('rec_files/enroll/*.wav')
+        enroll_audios = glob.glob('models/data/enroll_embeddings/*.pt')
+        
         for i, enroll_audio in enumerate(enroll_audios):
-            score = float(np.round(- torch.nn.functional.pairwise_distance(feat_enroll_list[i].unsqueeze(-1),
+            enroll_embeddings = torch.load(enroll_audios[i])
+            score = float(np.round(- torch.nn.functional.pairwise_distance(enroll_embeddings.unsqueeze(-1),
                                                                            feat_test.unsqueeze(-1).transpose(0,
                                                                                                              2)).detach().numpy(),
                                    4))
             if max_score < score:
                 max_score = score
-                max_audio = enroll_audio.split('/')[-1]
-        self.lineEdit.setText(max_audio.split('_')[0])
+                max_audio = enroll_audio.split('/')[-1].split('.')[0]
+        if max_score < -1.0:
+            self.lineEdit.setText("unknown person")
+        else:
+            self.lineEdit.setText(max_audio.split('_')[0])
 
 
 class enrollWindow(QWidget):
@@ -193,19 +202,25 @@ class enrollWindow(QWidget):
         with torch.no_grad():
             feat_enroll = model(loadWAV(audio)).detach()
             feat_enroll = torch.nn.functional.normalize(feat_enroll, p=2, dim=1)
-            feat_enroll_list.append(feat_enroll)
+            # feat_enroll_list.append(feat_enroll)
+            # embeddings = torch.cat(feat_enroll_list, dim=0)
+            # enroll_embeddings = torch.mean(embeddings, dim=0, keepdim=True)
+            # torch.save(enroll_embeddings, os.path.join('models','data', 'enroll_embeddings', 'pre_spk.pt'), _use_new_zipfile_serialization=False)
+            torch.save(feat_enroll, os.path.join('models','data', 'enroll_embeddings', str(self.text)+'.pt'), _use_new_zipfile_serialization=False)
 
 
 if __name__ == "__main__":
     warnings.filterwarnings("ignore")
     SpeakerNetModel = importlib.import_module('models.ResNetSE34V2').__getattribute__('MainModel')
     global model
+    
     model = SpeakerNetModel()
     model = loadPretrain(model, 'models/pretrain.model')
-    deldir('rec_files/enroll')
+    # deldir('rec_files/enroll')
     deldir('rec_files/test')
     mkdir('rec_files/enroll')
     mkdir('rec_files/test')
+    mkdir('models/data/enroll_embeddings')
 
     app = QApplication(sys.argv)
     mainWin = mainWindow()

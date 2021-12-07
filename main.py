@@ -1,10 +1,12 @@
 import time
-from PyQt5.QtGui import QKeyEvent
+from PyQt5.QtGui import QKeyEvent, QTextCursor
 from record import Recorder
 
+from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QPushButton, QPlainTextEdit,
                       QWidget, QMessageBox, QLineEdit)
 from PyQt5 import uic
+
 import numpy as np
 import os, glob, shutil, sys, torch, warnings, importlib, argparse
 from demoSpeakerNet import loadWAV, loadPretrain, mkdir, deldir
@@ -36,6 +38,8 @@ class mainWindow(QMainWindow):
 
 
 class testWindow(QWidget):
+    
+    m_singal = pyqtSignal(str)
     def __init__(self):
         super(testWindow, self).__init__()
         uic.loadUi("ui/testLayout.ui",self)
@@ -45,6 +49,7 @@ class testWindow(QWidget):
         self.recordButton.setEnabled(True)
         self.endButton.setEnabled(False)
         self._running = False
+        self.textEdit.clear()
 
     def slot_recordButton(self):
         self._running = True
@@ -54,9 +59,13 @@ class testWindow(QWidget):
 
     def __record(self):
 
-        threading._start_new_thread(self.loop_record, ())
+        threading._start_new_thread(self.loop_record, ("Thread-1", ))
         time.sleep(2)
-        threading._start_new_thread(self.loop_record, ())
+        threading._start_new_thread(self.loop_record, ("Thread-2", ))
+
+    def showEvent(self, event):
+        self.lineEdit.clear()
+        self.textEdit.clear()
 
     def closeEvent(self, event):
         """我们创建了一个消息框，上面有俩按钮：Yes和No.第一个字符串显示在消息框的标题栏，第二个字符串显示在对话框，
@@ -76,7 +85,7 @@ class testWindow(QWidget):
         # else:
         #     event.ignore()
 
-    def loop_record(self):
+    def loop_record(self, threadName):
         
         file_name = [str(x) for x in range(10)]
         count = 0
@@ -86,14 +95,14 @@ class testWindow(QWidget):
             # print("current_thread: "+threading.current_thread().getName()+"\nstartTime: "+str(datetime.datetime.now()))
             time.sleep(4)
             rec.stop()
-            audio = "rec_files/test/"+threading.current_thread().getName()+"_"+file_name[count]+"_test.wav"
+            audio = "rec_files/test/"+threadName+"_"+file_name[count]+"_test.wav"
             rec.save(audio)
             count += 1
             count %= 10
             self.test(audio)
 
         rec.stop()
-        audio = "rec_files/test/"+threading.current_thread().getName()+"_"+file_name[count]+"_test.wav"
+        audio = "rec_files/test/"+threadName+"_"+file_name[count]+"_test.wav"
         rec.save(audio)
 
 
@@ -132,8 +141,15 @@ class testWindow(QWidget):
                 max_audio = enroll_audio.split('/')[-1].split('.')[0]
         if max_score < -1.0:
             self.lineEdit.setText("unknown person")
+            self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+"unknown person")
         else:
             self.lineEdit.setText(max_audio.split('_')[0])
+            self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+max_audio)
+    
+    def show_msg(self, msg):
+        self.textEdit.moveCursor(QTextCursor.End)
+        self.textEdit.append(msg)
+        pass
 
 
 class enrollWindow(QWidget):
@@ -177,6 +193,9 @@ class enrollWindow(QWidget):
         self.recordButton.setEnabled(True)
         self.endButton.setEnabled(False)
     
+    def showEvent(self, event):
+        self.lineEdit.clear()
+
     def closeEvent(self, event):
         """我们创建了一个消息框，上面有俩按钮：Yes和No.第一个字符串显示在消息框的标题栏，第二个字符串显示在对话框，
                     第三个参数是消息框的俩按钮，最后一个参数是默认按钮，这个按钮是默认选中的。返回值在变量reply里。"""
@@ -226,6 +245,7 @@ if __name__ == "__main__":
     mainWin = mainWindow()
     enrollWin = enrollWindow()
     testWin = testWindow()
+    testWin.m_singal.connect(testWin.show_msg)
 
     # mainWin.ui.show()
     mainWin.show()

@@ -9,10 +9,12 @@ from PyQt5 import uic
 
 import numpy as np
 import os, glob, shutil, sys, torch, warnings, importlib, argparse
-from demoSpeakerNet import loadWAV, loadPretrain, mkdir, deldir
+from demoSpeakerNet import loadWAV, loadPretrain, mkdir, deldir, getKey
 from scipy.io.wavfile import write
 import threading
+from threading import Condition
 import datetime
+from queue import Queue
 
 
 
@@ -58,17 +60,22 @@ class testWindow(QWidget):
         threading._start_new_thread(self.__record, ())
 
     def __record(self):
-
-        threading._start_new_thread(self.loop_record, ("Thread-1", ))
-        time.sleep(2)
-        threading._start_new_thread(self.loop_record, ("Thread-2", ))
+        # 这里可以把vote线程当作消费者线程，而其他几个loop的线程可以当作生产者线程
+        threading._start_new_thread(self.consume, ("Thread-vote", ))
+        threading._start_new_thread(self.produce, ("Thread-1", ))
+        time.sleep(0.5)
+        threading._start_new_thread(self.produce, ("Thread-2", ))
+        time.sleep(0.5)
+        threading._start_new_thread(self.produce, ("Thread-3", ))
+        time.sleep(0.5)
+        threading._start_new_thread(self.produce, ("Thread-4", ))
 
     def showEvent(self, event):
         self.lineEdit.clear()
         self.textEdit.clear()
 
     def closeEvent(self, event):
-        """我们创建了一个消息框，上面有俩按钮：Yes和No.第一个字符串显示在消息框的标题栏，第二个字符串显示在对话框，
+        """我们创建了一个消息框，上面有俩按钮: Yes和No.第一个字符串显示在消息框的标题栏，第二个字符串显示在对话框，
                     第三个参数是消息框的俩按钮，最后一个参数是默认按钮，这个按钮是默认选中的。返回值在变量reply里。"""
 
         if self._running:
@@ -85,9 +92,45 @@ class testWindow(QWidget):
         # else:
         #     event.ignore()
 
-    def loop_record(self, threadName):
+    def consume(self, threadName):
+        while self._running:
+            if voteQueue.full():
+                # c_start = datetime.datetime.now()
+                stat={}
+                count={}
+                while not voteQueue.empty():
+                    re = voteQueue.get()
+                    name = re['name']
+                    if name not in count:
+                        count[name] = 1
+                    else:
+                        count[name] += 1
+                    if name not in stat:
+                        stat[name] = re['value']
+                    else:
+                        stat[name] += re['value']
+                max_key = max(count,key = count.get)
+                max_count = count[max_key]
+                result = getKey(count,max_count)
+                if len(result) == 1:
+                    self.lineEdit.setText(max_key)
+                    self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+max_key+"  vote result.")
+                else:
+                    min_val = float('-inf')
+                    min_name = ''
+                    for key in result:
+                        if stat[key] > min_val:
+                            min_name = key
+                            min_val = stat[key]
+                    self.lineEdit.setText(min_name)
+                    self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+min_name+"  vote result.")
+                # c_end = datetime.datetime.now()
+                # print("consume cost: ", c_end - c_start)
+            
+    
+    def produce(self, threadName):
         
-        file_name = [str(x) for x in range(10)]
+        file_name = [str(x) for x in range(5)]
         count = 0
         while self._running:
             rec = Recorder()
@@ -98,7 +141,7 @@ class testWindow(QWidget):
             audio = "rec_files/test/"+threadName+"_"+file_name[count]+"_test.wav"
             rec.save(audio)
             count += 1
-            count %= 10
+            count %= 5
             self.test(audio)
 
         rec.stop()
@@ -123,28 +166,36 @@ class testWindow(QWidget):
         threading._start_new_thread(self.__validate, (audio, ))
     
     def __validate(self, audio):
+        # f_start = datetime.datetime.now()
         feat_test = model(loadWAV(audio)).detach()
         feat_test = torch.nn.functional.normalize(feat_test, p=2, dim=1)
+        # f_end = datetime.datetime.now()
+        # print("loadWAV cost: ", f_end - f_start)
         max_score = float('-inf')
         max_audio = ''
-        # enroll_audios = glob.glob('rec_files/enroll/*.wav')
-        enroll_audios = glob.glob('models/data/enroll_embeddings/*.pt')
         
         for i, enroll_audio in enumerate(enroll_audios):
-            enroll_embeddings = torch.load(enroll_audios[i])
-            score = float(np.round(- torch.nn.functional.pairwise_distance(enroll_embeddings.unsqueeze(-1),
+            score = float(np.round(- torch.nn.functional.pairwise_distance(feat_enroll_list[i].unsqueeze(-1),
                                                                            feat_test.unsqueeze(-1).transpose(0,
                                                                                                              2)).detach().numpy(),
                                    4))
             if max_score < score:
                 max_score = score
                 max_audio = enroll_audio.split('/')[-1].split('.')[0]
+        score_dict = {}
         if max_score < -1.0:
-            self.lineEdit.setText("unknown person")
+            score_dict['name'] = "unknown person"
+            score_dict['value'] = max_score
+            # self.lineEdit.setText("unknown person")
             self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+"unknown person")
         else:
-            self.lineEdit.setText(max_audio.split('_')[0])
+            score_dict['name'] = max_audio.split('_')[0]
+            score_dict['value'] = max_score
+            # self.lineEdit.setText(max_audio.split('_')[0])
             self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+max_audio)
+        voteQueue.put(score_dict)
+        # c_end = datetime.datetime.now()
+        # print("comparison cost: ", c_end - f_end)
     
     def show_msg(self, msg):
         self.textEdit.moveCursor(QTextCursor.End)
@@ -221,17 +272,30 @@ class enrollWindow(QWidget):
         with torch.no_grad():
             feat_enroll = model(loadWAV(audio)).detach()
             feat_enroll = torch.nn.functional.normalize(feat_enroll, p=2, dim=1)
-            # feat_enroll_list.append(feat_enroll)
+            feat_enroll_list.append(feat_enroll)
             # embeddings = torch.cat(feat_enroll_list, dim=0)
             # enroll_embeddings = torch.mean(embeddings, dim=0, keepdim=True)
             # torch.save(enroll_embeddings, os.path.join('models','data', 'enroll_embeddings', 'pre_spk.pt'), _use_new_zipfile_serialization=False)
-            torch.save(feat_enroll, os.path.join('models','data', 'enroll_embeddings', str(self.text)+'.pt'), _use_new_zipfile_serialization=False)
+            save_path = os.path.join('models','data', 'enroll_embeddings', str(self.text)+'.pt')
+            torch.save(feat_enroll, save_path, _use_new_zipfile_serialization=False)
+            enroll_audios.append(save_path)
 
 
 if __name__ == "__main__":
     warnings.filterwarnings("ignore")
     SpeakerNetModel = importlib.import_module('models.ResNetSE34V2').__getattribute__('MainModel')
     global model
+    global feat_enroll_list
+    global enroll_audios
+    global voteQueue
+    # global cond
+    # cond = Condition()
+    voteQueue = Queue(4)
+    feat_enroll_list = []
+    enroll_audios = glob.glob('models/data/enroll_embeddings/*.pt')
+
+    for enroll_audio in enroll_audios:
+        feat_enroll_list.append(torch.load(enroll_audio))
     
     model = SpeakerNetModel()
     model = loadPretrain(model, 'models/pretrain.model')

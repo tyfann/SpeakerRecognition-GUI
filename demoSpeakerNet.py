@@ -1,6 +1,16 @@
 import os, soundfile, torch, copy, shutil
 import numpy as np
 
+def getKey(dic,value):
+    result = set() 
+    for key in dic: 
+        if dic[key] == value:
+            result.add(key)
+    if(len(result) != 0):
+        return result
+    else:
+        return None
+        
 def deldir(path):
     folder = os.path.exists(path)
     if folder:             

@@ -25,7 +25,7 @@ class Recorder():
                 input=True,
                 frames_per_buffer=self.CHUNK)
         while(self._running):
-            data = stream.read(self.CHUNK)
+            data = stream.read(self.CHUNK,exception_on_overflow=False)
             self._frames.append(data)
 
         stream.stop_stream()

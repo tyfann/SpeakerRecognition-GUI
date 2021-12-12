@@ -3,7 +3,7 @@ import pyaudio
 import wave
 
 class Recorder():
-    def __init__(self, chunk=1024, channels=1, rate=44100):
+    def __init__(self, chunk=1024, channels=1, rate=48000):
         self.CHUNK = chunk
         self.FORMAT = pyaudio.paInt16
         self.CHANNELS = channels

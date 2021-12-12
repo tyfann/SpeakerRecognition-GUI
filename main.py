@@ -61,6 +61,7 @@ class testWindow(QWidget):
 
     def __record(self):
         # 这里可以把vote线程当作消费者线程，而其他几个loop的线程可以当作生产者线程
+
         threading._start_new_thread(self.consume, ("Thread-vote", ))
         threading._start_new_thread(self.produce, ("Thread-1", ))
         time.sleep(0.5)
@@ -93,22 +94,24 @@ class testWindow(QWidget):
         #     event.ignore()
 
     def consume(self, threadName):
+        stat={}
+        count={}
+        num = 0
         while self._running:
-            if voteQueue.full():
-                # c_start = datetime.datetime.now()
-                stat={}
-                count={}
-                while not voteQueue.empty():
-                    re = voteQueue.get()
-                    name = re['name']
-                    if name not in count:
-                        count[name] = 1
-                    else:
-                        count[name] += 1
-                    if name not in stat:
-                        stat[name] = re['value']
-                    else:
-                        stat[name] += re['value']
+            
+            re = voteQueue.get()
+            num += 1
+            name = re['name']
+            if name not in count:
+                count[name] = 1
+            else:
+                count[name] += 1
+            if name not in stat:
+                stat[name] = re['value']
+            else:
+                stat[name] += re['value']
+            
+            if num == 4:
                 max_key = max(count,key = count.get)
                 max_count = count[max_key]
                 result = getKey(count,max_count)
@@ -124,8 +127,9 @@ class testWindow(QWidget):
                             min_val = stat[key]
                     self.lineEdit.setText(min_name)
                     self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+min_name+"  vote result.")
-                # c_end = datetime.datetime.now()
-                # print("consume cost: ", c_end - c_start)
+                stat={}
+                count={}
+                num = 0
             
     
     def produce(self, threadName):
@@ -166,11 +170,13 @@ class testWindow(QWidget):
         threading._start_new_thread(self.__validate, (audio, ))
     
     def __validate(self, audio):
-        # f_start = datetime.datetime.now()
+        # l_start = datetime.datetime.now()
         feat_test = model(loadWAV(audio)).detach()
+        # l_end = datetime.datetime.now()
+        # print("loadWAV cost: ", l_end - l_start)
         feat_test = torch.nn.functional.normalize(feat_test, p=2, dim=1)
         # f_end = datetime.datetime.now()
-        # print("loadWAV cost: ", f_end - f_start)
+        # print("to Embedding cost: ", f_end - l_end)
         max_score = float('-inf')
         max_audio = ''
         

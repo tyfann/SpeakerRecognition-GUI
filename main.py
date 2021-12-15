@@ -14,9 +14,24 @@ from scipy.io.wavfile import write
 import threading
 from threading import Condition
 import datetime
+import librosa
 from queue import Queue
 
-
+def loadAndCut(filename):
+    audio, sr = librosa.load(filename, sr= 48000, mono=True)
+    clips = librosa.effects.split(audio, top_db=10)
+    wav_data = []
+    for c in clips:
+        data = audio[c[0]: c[1]]
+        wav_data.extend(data)
+    wav_data = np.array(wav_data)
+    # print(filename,'  wav time is ', wav_data.shape[0]/48000)
+    feat = np.stack([wav_data], axis=0).astype(np.float)
+    feat = torch.FloatTensor(feat)
+    if feat.shape[1]/sr < 2:
+        return None
+    # print(filename,'  ',feat.shape[1])
+    return feat
 
 class mainWindow(QMainWindow):
 
@@ -169,39 +184,55 @@ class testWindow(QWidget):
     def test(self, audio):
         threading._start_new_thread(self.__validate, (audio, ))
     
+    # def silence_detect_remove(self, audio):
+
+    
     def __validate(self, audio):
-        # l_start = datetime.datetime.now()
-        feat_test = model(loadWAV(audio)).detach()
-        # l_end = datetime.datetime.now()
-        # print("loadWAV cost: ", l_end - l_start)
-        feat_test = torch.nn.functional.normalize(feat_test, p=2, dim=1)
-        # f_end = datetime.datetime.now()
-        # print("to Embedding cost: ", f_end - l_end)
-        max_score = float('-inf')
-        max_audio = ''
-        
-        for i, enroll_audio in enumerate(enroll_audios):
-            score = float(np.round(- torch.nn.functional.pairwise_distance(feat_enroll_list[i].unsqueeze(-1),
-                                                                           feat_test.unsqueeze(-1).transpose(0,
-                                                                                                             2)).detach().numpy(),
-                                   4))
-            if max_score < score:
-                max_score = score
-                max_audio = enroll_audio.split('/')[-1].split('.')[0]
-        score_dict = {}
-        if max_score < -1.0:
-            score_dict['name'] = "unknown person"
-            score_dict['value'] = max_score
-            # self.lineEdit.setText("unknown person")
-            self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+"unknown person")
-        else:
-            score_dict['name'] = max_audio.split('_')[0]
-            score_dict['value'] = max_score
-            # self.lineEdit.setText(max_audio.split('_')[0])
-            self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+max_audio)
-        voteQueue.put(score_dict)
-        # c_end = datetime.datetime.now()
-        # print("comparison cost: ", c_end - f_end)
+        with torch.no_grad():
+            # l_start = datetime.datetime.now()
+            feat = loadAndCut(audio)
+            
+            score_dict = {}
+            if feat is None:
+                score_dict['name'] = "unknown person"
+                score_dict['value'] = -1.0
+                # self.lineEdit.setText("unknown person")
+                self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+"unknown person")
+                voteQueue.put(score_dict)
+                return
+            # l_end = datetime.datetime.now()
+            # print("loadAndCut cost: ", l_end - l_start)
+            feat_test = model(feat).detach()
+            # m_end = datetime.datetime.now()
+            # print("model cost: ", m_end - l_end)
+            feat_test = torch.nn.functional.normalize(feat_test, p=2, dim=1)
+            # f_end = datetime.datetime.now()
+            # print("to Embedding cost: ", f_end - m_end)
+            
+            max_score = float('-inf')
+            max_audio = ''
+            for i, enroll_audio in enumerate(enroll_audios):
+                score = float(np.round(- torch.nn.functional.pairwise_distance(feat_enroll_list[i].unsqueeze(-1),
+                                                                            feat_test.unsqueeze(-1).transpose(0,
+                                                                                                                2)).detach().numpy(),
+                                    4))
+                if max_score < score:
+                    max_score = score
+                    max_audio = enroll_audio.split('/')[-1].split('.')[0]
+            
+            if max_score < -1.0:
+                score_dict['name'] = "unknown person"
+                score_dict['value'] = max_score
+                # self.lineEdit.setText("unknown person")
+                self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+"unknown person")
+            else:
+                score_dict['name'] = max_audio.split('_')[0]
+                score_dict['value'] = max_score
+                # self.lineEdit.setText(max_audio.split('_')[0])
+                self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+max_audio)
+            voteQueue.put(score_dict)
+            # c_end = datetime.datetime.now()
+            # print("comparison cost: ", c_end - f_end)
     
     def show_msg(self, msg):
         self.textEdit.moveCursor(QTextCursor.End)
@@ -254,7 +285,7 @@ class enrollWindow(QWidget):
         self.lineEdit.clear()
 
     def closeEvent(self, event):
-        """我们创建了一个消息框，上面有俩按钮：Yes和No.第一个字符串显示在消息框的标题栏，第二个字符串显示在对话框，
+        """我们创建了一个消息框，上面有俩按钮: Yes和No.第一个字符串显示在消息框的标题栏，第二个字符串显示在对话框，
                     第三个参数是消息框的俩按钮，最后一个参数是默认按钮，这个按钮是默认选中的。返回值在变量reply里。"""
 
         if self._running:
@@ -276,7 +307,8 @@ class enrollWindow(QWidget):
     
     def __enroll(self, audio):
         with torch.no_grad():
-            feat_enroll = model(loadWAV(audio)).detach()
+            feat = loadAndCut(audio)
+            feat_enroll = model(feat).detach()
             feat_enroll = torch.nn.functional.normalize(feat_enroll, p=2, dim=1)
             feat_enroll_list.append(feat_enroll)
             # embeddings = torch.cat(feat_enroll_list, dim=0)

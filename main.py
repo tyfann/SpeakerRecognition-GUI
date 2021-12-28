@@ -19,6 +19,7 @@ from queue import Queue
 
 def loadAndCut(filename):
     audio, sr = librosa.load(filename, sr= 48000, mono=True)
+    # top_db：数字> 0 低于参考值的阈值（以分贝为单位）被视为静音
     clips = librosa.effects.split(audio, top_db=10)
     wav_data = []
     for c in clips:
@@ -28,7 +29,10 @@ def loadAndCut(filename):
     # print(filename,'  wav time is ', wav_data.shape[0]/48000)
     feat = np.stack([wav_data], axis=0).astype(np.float)
     feat = torch.FloatTensor(feat)
-    if feat.shape[1]/sr < 2:
+
+    print(feat.shape[1])
+
+    if feat.shape[1]/sr < 1:
         return None
     # print(filename,'  ',feat.shape[1])
     return feat
@@ -190,8 +194,8 @@ class testWindow(QWidget):
     def __validate(self, audio):
         with torch.no_grad():
             # l_start = datetime.datetime.now()
-            feat = loadAndCut(audio)
-            
+            # feat = loadAndCut(audio)
+            feat = loadWAV(audio)
             score_dict = {}
             if feat is None:
                 score_dict['name'] = "unknown person"
@@ -307,7 +311,8 @@ class enrollWindow(QWidget):
     
     def __enroll(self, audio):
         with torch.no_grad():
-            feat = loadAndCut(audio)
+            # feat = loadAndCut(audio)
+            feat = loadWAV(audio)
             feat_enroll = model(feat).detach()
             feat_enroll = torch.nn.functional.normalize(feat_enroll, p=2, dim=1)
             feat_enroll_list.append(feat_enroll)

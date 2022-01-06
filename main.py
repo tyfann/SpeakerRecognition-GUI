@@ -82,13 +82,14 @@ class testWindow(QWidget):
         # 这里可以把vote线程当作消费者线程，而其他几个loop的线程可以当作生产者线程
 
         threading._start_new_thread(self.consume, ("Thread-vote", ))
-        threading._start_new_thread(self.produce, ("Thread-1", ))
-        time.sleep(0.5)
-        threading._start_new_thread(self.produce, ("Thread-2", ))
-        time.sleep(0.5)
-        threading._start_new_thread(self.produce, ("Thread-3", ))
-        time.sleep(0.5)
-        threading._start_new_thread(self.produce, ("Thread-4", ))
+        for i in range(1, 9):
+            threading._start_new_thread(self.produce, ("Thread-"+str(i), ))
+            time.sleep(0.5)
+        # threading._start_new_thread(self.produce, ("Thread-2", ))
+        # time.sleep(0.5)
+        # threading._start_new_thread(self.produce, ("Thread-3", ))
+        # time.sleep(0.5)
+        # threading._start_new_thread(self.produce, ("Thread-4", ))
 
     def showEvent(self, event):
         self.lineEdit.clear()
@@ -117,6 +118,9 @@ class testWindow(QWidget):
         count={}
         num = 0
         while self._running:
+
+            if num == 0:
+                start = datetime.datetime.now()
             
             re = voteQueue.get()
             num += 1
@@ -149,6 +153,8 @@ class testWindow(QWidget):
                 stat={}
                 count={}
                 num = 0
+                end = datetime.datetime.now()
+                print("consume time is ",end-start)
             
     
     def produce(self, threadName):

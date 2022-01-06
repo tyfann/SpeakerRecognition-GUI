@@ -61,6 +61,7 @@ class mainWindow(QMainWindow):
 class testWindow(QWidget):
     
     m_singal = pyqtSignal(str)
+    f_signal = pyqtSignal(str)
     def __init__(self):
         super(testWindow, self).__init__()
         uic.loadUi("ui/testLayout.ui",self)
@@ -116,31 +117,30 @@ class testWindow(QWidget):
     def consume(self, threadName):
         stat={}
         count={}
-        num = 0
+
         while self._running:
 
-            if num == 0:
-                start = datetime.datetime.now()
-            
-            re = voteQueue.get()
-            num += 1
-            name = re['name']
-            if name not in count:
-                count[name] = 1
-            else:
-                count[name] += 1
-            if name not in stat:
-                stat[name] = re['value']
-            else:
-                stat[name] += re['value']
-            
-            if num == 4:
+            if voteQueue.full():
+                for i in range(4):
+                    voteKey = voteQueue.get()
+                    name = voteKey['name']
+                    if name not in count:
+                        count[name] = 1
+                    else:
+                        count[name] += 1
+                    if name not in stat:
+                        stat[name] = voteKey['value']
+                    else:
+                        stat[name] += voteKey['value']
+                    if i != 0:
+                        voteQueue.put(voteKey)
+                
                 max_key = max(count,key = count.get)
                 max_count = count[max_key]
                 result = getKey(count,max_count)
                 if len(result) == 1:
                     self.lineEdit.setText(max_key)
-                    self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+max_key+"  vote result.")
+                    self.f_signal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+max_key+"  vote result.")
                 else:
                     min_val = float('-inf')
                     min_name = ''
@@ -149,17 +149,15 @@ class testWindow(QWidget):
                             min_name = key
                             min_val = stat[key]
                     self.lineEdit.setText(min_name)
-                    self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+min_name+"  vote result.")
+                    self.f_signal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+min_name+"  vote result.")
                 stat={}
                 count={}
-                num = 0
-                end = datetime.datetime.now()
-                print("consume time is ",end-start)
+                    
             
     
     def produce(self, threadName):
         
-        file_name = [str(x) for x in range(5)]
+        file_name = [str(x) for x in range(3)]
         count = 0
         while self._running:
             rec = Recorder()
@@ -167,10 +165,12 @@ class testWindow(QWidget):
             # print("current_thread: "+threading.current_thread().getName()+"\nstartTime: "+str(datetime.datetime.now()))
             time.sleep(4)
             rec.stop()
+            if self._running == False:
+                break
             audio = "rec_files/test/"+threadName+"_"+file_name[count]+"_test.wav"
             rec.save(audio)
             count += 1
-            count %= 5
+            count %= 3
             self.test(audio)
 
         rec.stop()
@@ -247,6 +247,11 @@ class testWindow(QWidget):
     def show_msg(self, msg):
         self.textEdit.moveCursor(QTextCursor.End)
         self.textEdit.append(msg)
+        pass
+
+    def show_final_msg(self, msg):
+        self.textEdit_Final.moveCursor(QTextCursor.End)
+        self.textEdit_Final.append(msg)
         pass
 
 
@@ -359,6 +364,7 @@ if __name__ == "__main__":
     enrollWin = enrollWindow()
     testWin = testWindow()
     testWin.m_singal.connect(testWin.show_msg)
+    testWin.f_signal.connect(testWin.show_final_msg)
 
     # mainWin.ui.show()
     mainWin.show()

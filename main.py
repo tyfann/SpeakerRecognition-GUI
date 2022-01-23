@@ -257,6 +257,7 @@ class testWindow(QWidget):
                                                       feat_test.unsqueeze(-1).transpose(0, 2)).detach().numpy()
 
                 score = -float(np.mean(dist))
+                print(score)
 
                 # score = float(np.round(- torch.nn.functional.pairwise_distance(feat_enroll_list[i].unsqueeze(-1),
                 #                                                                feat_test.unsqueeze(-1).transpose(0,

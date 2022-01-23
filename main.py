@@ -4,23 +4,26 @@ from record import Recorder
 
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QPushButton, QPlainTextEdit,
-                      QWidget, QMessageBox, QLineEdit)
+                             QWidget, QMessageBox, QLineEdit)
 from PyQt5 import uic
 
 import numpy as np
 import os, glob, shutil, sys, torch, warnings, importlib, argparse
 from demoSpeakerNet import loadWAV, loadPretrain, mkdir, deldir, getKey
+from audioProcessing import pcm2wav, sgn, calEnergy, calZeroCrossingRate, endPointDetect
 from scipy.io.wavfile import write
 import threading
 from threading import Condition
 import datetime
 import librosa
+import wave
 from queue import Queue
 
+
 def loadAndCut(filename):
-    audio, sr = librosa.load(filename, sr= 48000, mono=True)
+    audio, sr = librosa.load(filename, sr=48000, mono=True)
     # top_db：数字> 0 低于参考值的阈值（以分贝为单位）被视为静音
-    clips = librosa.effects.split(audio, top_db=10)
+    clips = librosa.effects.split(audio, top_db=20)
     wav_data = []
     for c in clips:
         data = audio[c[0]: c[1]]
@@ -30,41 +33,41 @@ def loadAndCut(filename):
     feat = np.stack([wav_data], axis=0).astype(np.float)
     feat = torch.FloatTensor(feat)
 
-    print(feat.shape[1])
+    # print(feat.shape[1])
 
-    if feat.shape[1]/sr < 1:
+    if feat.shape[1] / sr <= 0.5:
         return None
     # print(filename,'  ',feat.shape[1])
     return feat
+
 
 class mainWindow(QMainWindow):
 
     def __init__(self):
         super(mainWindow, self).__init__()
-        uic.loadUi("ui/mainLayout.ui",self)
+        uic.loadUi("ui/mainLayout.ui", self)
         # self.ui = uic.loadUi("ui/mainLayout.ui")
         # self.ui.show()
 
-    def closeEvent(self,e):
+    def closeEvent(self, e):
         reply = QMessageBox.question(self, '提示',
-                    "是否要关闭所有窗口?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No)
+                                     "是否要关闭所有窗口?",
+                                     QMessageBox.Yes | QMessageBox.No,
+                                     QMessageBox.No)
         if reply == QMessageBox.Yes:
             e.accept()
-            sys.exit(0)   # 退出程序
+            sys.exit(0)  # 退出程序
         else:
             e.ignore()
 
 
-
 class testWindow(QWidget):
-    
     m_singal = pyqtSignal(str)
     f_signal = pyqtSignal(str)
+
     def __init__(self):
         super(testWindow, self).__init__()
-        uic.loadUi("ui/testLayout.ui",self)
+        uic.loadUi("ui/testLayout.ui", self)
         # self.ui = uic.loadUi("ui/testLayout.ui")
         self.recordButton.clicked.connect(self.slot_recordButton)
         self.endButton.clicked.connect(self.slot_endButton)
@@ -82,9 +85,9 @@ class testWindow(QWidget):
     def __record(self):
         # 这里可以把vote线程当作消费者线程，而其他几个loop的线程可以当作生产者线程
 
-        threading._start_new_thread(self.consume, ("Thread-vote", ))
+        threading._start_new_thread(self.consume, ("Thread-vote",))
         for i in range(1, 9):
-            threading._start_new_thread(self.produce, ("Thread-"+str(i), ))
+            threading._start_new_thread(self.produce, ("Thread-" + str(i),))
             time.sleep(0.5)
         # threading._start_new_thread(self.produce, ("Thread-2", ))
         # time.sleep(0.5)
@@ -105,7 +108,7 @@ class testWindow(QWidget):
             messageBox.information(self, "警告", "还在录音!", QMessageBox.Ok)
             event.ignore()
             return
-        
+
         # reply = QMessageBox.question(self, 'Message',"Are you sure to quit?",
         #                                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         # # 判断返回值，如果点击的是Yes按钮，我们就关闭组件和应用，否则就忽略关闭事件
@@ -115,8 +118,8 @@ class testWindow(QWidget):
         #     event.ignore()
 
     def consume(self, threadName):
-        stat={}
-        count={}
+        stat = {}
+        count = {}
 
         while self._running:
 
@@ -134,13 +137,14 @@ class testWindow(QWidget):
                         stat[name] += voteKey['value']
                     if i != 0:
                         voteQueue.put(voteKey)
-                
-                max_key = max(count,key = count.get)
+
+                max_key = max(count, key=count.get)
                 max_count = count[max_key]
-                result = getKey(count,max_count)
+                result = getKey(count, max_count)
                 if len(result) == 1:
                     self.lineEdit.setText(max_key)
-                    self.f_signal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+max_key+"  vote result.")
+                    self.f_signal.emit(
+                        str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')) + "   " + max_key + "  vote result.")
                 else:
                     min_val = float('-inf')
                     min_name = ''
@@ -149,34 +153,62 @@ class testWindow(QWidget):
                             min_name = key
                             min_val = stat[key]
                     self.lineEdit.setText(min_name)
-                    self.f_signal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+min_name+"  vote result.")
-                stat={}
-                count={}
-                    
-            
-    
+                    self.f_signal.emit(str(datetime.datetime.now().strftime(
+                        '%Y-%m-%d %H:%M:%S')) + "   " + min_name + "  vote result.")
+                stat = {}
+                count = {}
+
     def produce(self, threadName):
-        
-        file_name = [str(x) for x in range(3)]
+        max_range = 5
+        file_name = [str(x) for x in range(max_range)]
         count = 0
         while self._running:
             rec = Recorder()
             rec.start()
             # print("current_thread: "+threading.current_thread().getName()+"\nstartTime: "+str(datetime.datetime.now()))
-            time.sleep(4)
+            time.sleep(2)
             rec.stop()
             if self._running == False:
                 break
-            audio = "rec_files/test/"+threadName+"_"+file_name[count]+"_test.wav"
+            audio = "rec_files/test/" + threadName + "_" + file_name[count] + "_test.wav"
             rec.save(audio)
+            self.silence_remove(audio)
             count += 1
-            count %= 3
+            count %= max_range
             self.test(audio)
 
         rec.stop()
-        audio = "rec_files/test/"+threadName+"_"+file_name[count]+"_test.wav"
+        audio = "rec_files/test/" + threadName + "_" + file_name[count] + "_test.wav"
         rec.save(audio)
+        self.silence_remove(audio)
 
+    def silence_remove(self, audio):
+        f = wave.open(audio, "rb")
+        # getparams() 一次性返回所有的WAV文件的格式信息
+        params = f.getparams()
+        # nframes 采样点数目
+        nchannels, sampwidth, framerate, nframes = params[:4]
+        # readframes() 按照采样点读取数据
+        str_data = f.readframes(nframes)  # str_data 是二进制字符串
+
+        # 以上可以直接写成 str_data = f.readframes(f.getnframes())
+        # 转成二字节数组形式（每个采样点占两个字节）
+        wave_data = np.fromstring(str_data, dtype=np.short)
+        f.close()
+        energy = calEnergy(wave_data)
+
+        zeroCrossingRate = calZeroCrossingRate(wave_data)
+
+        N = endPointDetect(wave_data, energy, zeroCrossingRate)
+        # 输出为 pcm 格式
+        pcm_path = "rec_files/endpoint/" + audio.split('/')[-1].split('.')[0] + ".pcm"
+        with open(pcm_path, "wb") as f:
+            i = 0
+            while i < len(N) and i + 1 < len(N):
+                for num in wave_data[N[i] * 256: N[i + 1] * 256]:
+                    f.write(num)
+                i = i + 2
+        pcm2wav(pcm_path)
 
     def slot_endButton(self):
         # if testQueue.qsize == 0:
@@ -192,22 +224,21 @@ class testWindow(QWidget):
         self.endButton.setEnabled(False)
 
     def test(self, audio):
-        threading._start_new_thread(self.__validate, (audio, ))
-    
+        threading._start_new_thread(self.__validate, (audio,))
+
     # def silence_detect_remove(self, audio):
 
-    
     def __validate(self, audio):
         with torch.no_grad():
             # l_start = datetime.datetime.now()
             # feat = loadAndCut(audio)
             feat = loadWAV(audio)
             score_dict = {}
-            if feat is None:
-                score_dict['name'] = "unknown person"
+            if not feat.numel():
+                score_dict['name'] = "silence"
                 score_dict['value'] = -1.0
                 # self.lineEdit.setText("unknown person")
-                self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+"unknown person")
+                self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')) + "   " + "silence type1")
                 voteQueue.put(score_dict)
                 return
             # l_end = datetime.datetime.now()
@@ -218,32 +249,38 @@ class testWindow(QWidget):
             feat_test = torch.nn.functional.normalize(feat_test, p=2, dim=1)
             # f_end = datetime.datetime.now()
             # print("to Embedding cost: ", f_end - m_end)
-            
+
             max_score = float('-inf')
             max_audio = ''
             for i, enroll_audio in enumerate(enroll_audios):
-                score = float(np.round(- torch.nn.functional.pairwise_distance(feat_enroll_list[i].unsqueeze(-1),
-                                                                            feat_test.unsqueeze(-1).transpose(0,
-                                                                                                                2)).detach().numpy(),
-                                    4))
+                dist = torch.nn.functional.pairwise_distance(feat_enroll_list[i].unsqueeze(-1),
+                                                      feat_test.unsqueeze(-1).transpose(0, 2)).detach().numpy()
+
+                score = -float(np.mean(dist))
+
+                # score = float(np.round(- torch.nn.functional.pairwise_distance(feat_enroll_list[i].unsqueeze(-1),
+                #                                                                feat_test.unsqueeze(-1).transpose(0,
+                #                                                                                                  2)).detach().numpy(),
+                #                        4))
                 if max_score < score:
                     max_score = score
                     max_audio = enroll_audio.split('/')[-1].split('.')[0]
-            
+
+            print(max_score)
             if max_score < -1.0:
-                score_dict['name'] = "unknown person"
+                score_dict['name'] = "silence"
                 score_dict['value'] = max_score
                 # self.lineEdit.setText("unknown person")
-                self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+"unknown person")
+                self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')) + "   " + "silence type2")
             else:
                 score_dict['name'] = max_audio.split('_')[0]
                 score_dict['value'] = max_score
                 # self.lineEdit.setText(max_audio.split('_')[0])
-                self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))+"   "+max_audio)
+                self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')) + "   " + max_audio)
             voteQueue.put(score_dict)
             # c_end = datetime.datetime.now()
             # print("comparison cost: ", c_end - f_end)
-    
+
     def show_msg(self, msg):
         self.textEdit.moveCursor(QTextCursor.End)
         self.textEdit.append(msg)
@@ -258,7 +295,7 @@ class testWindow(QWidget):
 class enrollWindow(QWidget):
     def __init__(self):
         super(enrollWindow, self).__init__()
-        uic.loadUi("ui/enrollLayout.ui",self)
+        uic.loadUi("ui/enrollLayout.ui", self)
         # self.ui = uic.loadUi("ui/enrollLayout.ui")
         self.recordButton.clicked.connect(self.slot_recordButton)
         self.endButton.clicked.connect(self.slot_endButton)
@@ -279,7 +316,7 @@ class enrollWindow(QWidget):
         self.rec.start()
         self.recordButton.setEnabled(False)
         self.endButton.setEnabled(True)
-    
+
     # 结束录音
     def slot_endButton(self):
         # if recQueue.qsize == 0:
@@ -288,14 +325,14 @@ class enrollWindow(QWidget):
         #     return
         self._running = False
         self.rec.stop()
-        audio = "rec_files/enroll/"+str(self.text)+"_enroll.wav"
+        audio = "rec_files/enroll/" + str(self.text) + "_enroll.wav"
         self.rec.save(audio)
         self.train(audio)
         messageBox = QMessageBox(self)
         messageBox.information(self, "成功", "已保存录音!", QMessageBox.Ok)
         self.recordButton.setEnabled(True)
         self.endButton.setEnabled(False)
-    
+
     def showEvent(self, event):
         self.lineEdit.clear()
 
@@ -308,7 +345,7 @@ class enrollWindow(QWidget):
             messageBox.information(self, "警告", "还在录音!", QMessageBox.Ok)
             event.ignore()
             return
-        
+
         # reply = QMessageBox.question(self, 'Message',"Are you sure to quit?",
         #                                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         # # 判断返回值，如果点击的是Yes按钮，我们就关闭组件和应用，否则就忽略关闭事件
@@ -318,8 +355,8 @@ class enrollWindow(QWidget):
         #     event.ignore()
 
     def train(self, audio):
-        threading._start_new_thread(self.__enroll, (audio, ))
-    
+        threading._start_new_thread(self.__enroll, (audio,))
+
     def __enroll(self, audio):
         with torch.no_grad():
             # feat = loadAndCut(audio)
@@ -330,7 +367,7 @@ class enrollWindow(QWidget):
             # embeddings = torch.cat(feat_enroll_list, dim=0)
             # enroll_embeddings = torch.mean(embeddings, dim=0, keepdim=True)
             # torch.save(enroll_embeddings, os.path.join('models','data', 'enroll_embeddings', 'pre_spk.pt'), _use_new_zipfile_serialization=False)
-            save_path = os.path.join('models','data', 'enroll_embeddings', str(self.text)+'.pt')
+            save_path = os.path.join('models', 'data', 'enroll_embeddings', str(self.text) + '.pt')
             torch.save(feat_enroll, save_path, _use_new_zipfile_serialization=False)
             enroll_audios.append(save_path)
 
@@ -350,7 +387,7 @@ if __name__ == "__main__":
 
     for enroll_audio in enroll_audios:
         feat_enroll_list.append(torch.load(enroll_audio))
-    
+
     model = SpeakerNetModel()
     model = loadPretrain(model, 'models/pretrain.model')
     # deldir('rec_files/enroll')
@@ -358,6 +395,8 @@ if __name__ == "__main__":
     mkdir('rec_files/enroll')
     mkdir('rec_files/test')
     mkdir('models/data/enroll_embeddings')
+    deldir('rec_files/endpoint')
+    mkdir('rec_files/endpoint')
 
     app = QApplication(sys.argv)
     mainWin = mainWindow()

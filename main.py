@@ -86,9 +86,13 @@ class testWindow(QWidget):
         # 这里可以把vote线程当作消费者线程，而其他几个loop的线程可以当作生产者线程
 
         threading._start_new_thread(self.consume, ("Thread-vote",))
-        for i in range(1, 9):
-            threading._start_new_thread(self.produce, ("Thread-" + str(i),))
-            time.sleep(0.5)
+        for i in range(1, 5):
+            if i % 2==0:
+                threading._start_new_thread(self.produce, ("Thread-" + str(i), model2,))
+            else:
+                threading._start_new_thread(self.produce, ("Thread-" + str(i), model1,))
+            
+            time.sleep(1)
         # threading._start_new_thread(self.produce, ("Thread-2", ))
         # time.sleep(0.5)
         # threading._start_new_thread(self.produce, ("Thread-3", ))
@@ -158,7 +162,7 @@ class testWindow(QWidget):
                 stat = {}
                 count = {}
 
-    def produce(self, threadName):
+    def produce(self, threadName, local_model):
         max_range = 5
         file_name = [str(x) for x in range(max_range)]
         count = 0
@@ -166,7 +170,7 @@ class testWindow(QWidget):
             rec = Recorder()
             rec.start()
             # print("current_thread: "+threading.current_thread().getName()+"\nstartTime: "+str(datetime.datetime.now()))
-            time.sleep(2)
+            time.sleep(4)
             rec.stop()
             if self._running == False:
                 break
@@ -175,7 +179,7 @@ class testWindow(QWidget):
             self.silence_remove(audio)
             count += 1
             count %= max_range
-            self.test(audio)
+            self.test(audio, local_model)
 
         rec.stop()
         audio = "rec_files/test/" + threadName + "_" + file_name[count] + "_test.wav"
@@ -223,12 +227,12 @@ class testWindow(QWidget):
         self.recordButton.setEnabled(True)
         self.endButton.setEnabled(False)
 
-    def test(self, audio):
-        threading._start_new_thread(self.__validate, (audio,))
+    def test(self, audio, local_model):
+        threading._start_new_thread(self.__validate, (audio, local_model,))
 
     # def silence_detect_remove(self, audio):
 
-    def __validate(self, audio):
+    def __validate(self, audio, local_model):
         with torch.no_grad():
             # l_start = datetime.datetime.now()
             # feat = loadAndCut(audio)
@@ -243,7 +247,7 @@ class testWindow(QWidget):
                 return
             # l_end = datetime.datetime.now()
             # print("loadAndCut cost: ", l_end - l_start)
-            feat_test = model(feat).detach()
+            feat_test = local_model(feat).detach()
             # m_end = datetime.datetime.now()
             # print("model cost: ", m_end - l_end)
             feat_test = torch.nn.functional.normalize(feat_test, p=2, dim=1)
@@ -253,16 +257,17 @@ class testWindow(QWidget):
             max_score = float('-inf')
             max_audio = ''
             for i, enroll_audio in enumerate(enroll_audios):
-                dist = torch.nn.functional.pairwise_distance(feat_enroll_list[i].unsqueeze(-1),
-                                                      feat_test.unsqueeze(-1).transpose(0, 2)).detach().numpy()
+                # dist = torch.nn.functional.pairwise_distance(feat_enroll_list[i].unsqueeze(-1),
+                #                                       feat_test.unsqueeze(-1).transpose(0, 2)).detach().numpy()
 
-                score = -float(np.mean(dist))
-                print(score)
 
-                # score = float(np.round(- torch.nn.functional.pairwise_distance(feat_enroll_list[i].unsqueeze(-1),
-                #                                                                feat_test.unsqueeze(-1).transpose(0,
-                #                                                                                                  2)).detach().numpy(),
-                #                        4))
+                # score = float(np.round(-dist,4))
+                # print(score)
+
+                score = float(np.round(- torch.nn.functional.pairwise_distance(feat_enroll_list[i].unsqueeze(-1),
+                                                                               feat_test.unsqueeze(-1).transpose(0,
+                                                                                                                 2)).detach().numpy(),
+                                       4))
                 if max_score < score:
                     max_score = score
                     max_audio = enroll_audio.split('/')[-1].split('.')[0]
@@ -376,7 +381,7 @@ class enrollWindow(QWidget):
 if __name__ == "__main__":
     warnings.filterwarnings("ignore")
     SpeakerNetModel = importlib.import_module('models.ResNetSE34V2').__getattribute__('MainModel')
-    global model
+    global model, model1, model2
     global feat_enroll_list
     global enroll_audios
     global voteQueue
@@ -391,6 +396,18 @@ if __name__ == "__main__":
 
     model = SpeakerNetModel()
     model = loadPretrain(model, 'models/pretrain.model')
+
+    model.eval()
+
+    model1 = SpeakerNetModel()
+    model1 = loadPretrain(model1, 'models/pretrain.model')
+
+    model1.eval()
+
+    model2 = SpeakerNetModel()
+    model2 = loadPretrain(model2, 'models/pretrain.model')
+
+    model2.eval()
     # deldir('rec_files/enroll')
     deldir('rec_files/test')
     mkdir('rec_files/enroll')

@@ -19,6 +19,10 @@ import librosa
 import wave
 from queue import Queue
 
+score_threshold = -1.1
+time_interval = 1
+time_duration = 4
+
 
 def loadAndCut(filename):
     audio, sr = librosa.load(filename, sr=48000, mono=True)
@@ -92,7 +96,7 @@ class testWindow(QWidget):
             else:
                 threading._start_new_thread(self.produce, ("Thread-" + str(i), model1,))
             
-            time.sleep(1)
+            time.sleep(time_interval)
         # threading._start_new_thread(self.produce, ("Thread-2", ))
         # time.sleep(0.5)
         # threading._start_new_thread(self.produce, ("Thread-3", ))
@@ -170,23 +174,28 @@ class testWindow(QWidget):
             rec = Recorder()
             rec.start()
             # print("current_thread: "+threading.current_thread().getName()+"\nstartTime: "+str(datetime.datetime.now()))
-            time.sleep(4)
+            time.sleep(time_duration)
             rec.stop()
             if self._running == False:
                 break
             audio = "rec_files/test/" + threadName + "_" + file_name[count] + "_test.wav"
             rec.save(audio)
-            self.silence_remove(audio)
+
+            threading._start_new_thread(self.silence_remove_and_test, (audio,local_model,))
+            # self.silence_remove_and_test(audio)
             count += 1
             count %= max_range
-            self.test(audio, local_model)
+            # self.test(audio, local_model)
 
         rec.stop()
         audio = "rec_files/test/" + threadName + "_" + file_name[count] + "_test.wav"
         rec.save(audio)
-        self.silence_remove(audio)
+        # threading._start_new_thread(self.silence_remove_and_test, (audio,local_model,))
+        # self.silence_remove(audio)
+    
 
-    def silence_remove(self, audio):
+
+    def silence_remove_and_test(self, audio, local_model):
         f = wave.open(audio, "rb")
         # getparams() 一次性返回所有的WAV文件的格式信息
         params = f.getparams()
@@ -203,7 +212,17 @@ class testWindow(QWidget):
 
         zeroCrossingRate = calZeroCrossingRate(wave_data)
 
-        N = endPointDetect(wave_data, energy, zeroCrossingRate)
+        sum = 0
+        for k in energy:
+            sum += k
+        aver = sum / len(energy)
+        # print(aver)
+        if aver < 100000:
+            N = []
+        else:
+            N = endPointDetect(wave_data, energy, zeroCrossingRate)
+
+        # N = endPointDetect(wave_data, energy, zeroCrossingRate)
         # 输出为 pcm 格式
         pcm_path = "rec_files/endpoint/" + audio.split('/')[-1].split('.')[0] + ".pcm"
         with open(pcm_path, "wb") as f:
@@ -213,6 +232,9 @@ class testWindow(QWidget):
                     f.write(num)
                 i = i + 2
         pcm2wav(pcm_path)
+
+        self.__validate(audio,local_model)
+        # self.test(audio, local_model)
 
     def slot_endButton(self):
         # if testQueue.qsize == 0:
@@ -273,7 +295,7 @@ class testWindow(QWidget):
                     max_audio = enroll_audio.split('/')[-1].split('.')[0]
 
             print(max_score)
-            if max_score < -1.0:
+            if max_score < score_threshold:
                 score_dict['name'] = "silence"
                 score_dict['value'] = max_score
                 # self.lineEdit.setText("unknown person")

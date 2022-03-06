@@ -1,5 +1,7 @@
 import time
 from PyQt5.QtGui import QKeyEvent, QTextCursor
+from openvino.inference_engine import IECore
+
 from record import Recorder
 
 from PyQt5.QtCore import pyqtSignal
@@ -91,17 +93,10 @@ class testWindow(QWidget):
 
         threading._start_new_thread(self.consume, ("Thread-vote",))
         for i in range(1, 5):
-            if i % 2==0:
-                threading._start_new_thread(self.produce, ("Thread-" + str(i), model2,))
-            else:
-                threading._start_new_thread(self.produce, ("Thread-" + str(i), model1,))
-            
+            threading._start_new_thread(self.produce, ("Thread-" + str(i),))
+
             time.sleep(time_interval)
-        # threading._start_new_thread(self.produce, ("Thread-2", ))
-        # time.sleep(0.5)
-        # threading._start_new_thread(self.produce, ("Thread-3", ))
-        # time.sleep(0.5)
-        # threading._start_new_thread(self.produce, ("Thread-4", ))
+
 
     def showEvent(self, event):
         self.lineEdit.clear()
@@ -117,13 +112,6 @@ class testWindow(QWidget):
             event.ignore()
             return
 
-        # reply = QMessageBox.question(self, 'Message',"Are you sure to quit?",
-        #                                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        # # 判断返回值，如果点击的是Yes按钮，我们就关闭组件和应用，否则就忽略关闭事件
-        # if reply == QMessageBox.Yes:
-        #     event.accept()
-        # else:
-        #     event.ignore()
 
     def consume(self, threadName):
         stat = {}
@@ -166,7 +154,7 @@ class testWindow(QWidget):
                 stat = {}
                 count = {}
 
-    def produce(self, threadName, local_model):
+    def produce(self, threadName):
         max_range = 5
         file_name = [str(x) for x in range(max_range)]
         count = 0
@@ -181,21 +169,19 @@ class testWindow(QWidget):
             audio = "rec_files/test/" + threadName + "_" + file_name[count] + "_test.wav"
             rec.save(audio)
 
-            threading._start_new_thread(self.silence_remove_and_test, (audio,local_model,))
+            threading._start_new_thread(self.silence_remove_and_test, (audio,))
             # self.silence_remove_and_test(audio)
             count += 1
             count %= max_range
-            # self.test(audio, local_model)
 
         rec.stop()
         audio = "rec_files/test/" + threadName + "_" + file_name[count] + "_test.wav"
         rec.save(audio)
-        # threading._start_new_thread(self.silence_remove_and_test, (audio,local_model,))
         # self.silence_remove(audio)
     
 
 
-    def silence_remove_and_test(self, audio, local_model):
+    def silence_remove_and_test(self, audio):
         f = wave.open(audio, "rb")
         # getparams() 一次性返回所有的WAV文件的格式信息
         params = f.getparams()
@@ -233,8 +219,7 @@ class testWindow(QWidget):
                 i = i + 2
         pcm2wav(pcm_path)
 
-        self.__validate(audio,local_model)
-        # self.test(audio, local_model)
+        self.__validate(audio)
 
     def slot_endButton(self):
         # if testQueue.qsize == 0:
@@ -249,12 +234,12 @@ class testWindow(QWidget):
         self.recordButton.setEnabled(True)
         self.endButton.setEnabled(False)
 
-    def test(self, audio, local_model):
-        threading._start_new_thread(self.__validate, (audio, local_model,))
+    def test(self, audio):
+        threading._start_new_thread(self.__validate, (audio,))
 
     # def silence_detect_remove(self, audio):
 
-    def __validate(self, audio, local_model):
+    def __validate(self, audio):
         with torch.no_grad():
             # l_start = datetime.datetime.now()
             # feat = loadAndCut(audio)
@@ -267,11 +252,11 @@ class testWindow(QWidget):
                 self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')) + "   " + "silence type1")
                 voteQueue.put(score_dict)
                 return
-            # l_end = datetime.datetime.now()
+            l_end = datetime.datetime.now()
             # print("loadAndCut cost: ", l_end - l_start)
-            feat_test = local_model(feat).detach()
-            # m_end = datetime.datetime.now()
-            # print("model cost: ", m_end - l_end)
+            feat_test = torch.from_numpy(exec_net.infer(feat)[out_blob])
+            m_end = datetime.datetime.now()
+            print("model cost: ", m_end - l_end)
             feat_test = torch.nn.functional.normalize(feat_test, p=2, dim=1)
             # f_end = datetime.datetime.now()
             # print("to Embedding cost: ", f_end - m_end)
@@ -294,7 +279,7 @@ class testWindow(QWidget):
                     max_score = score
                     max_audio = enroll_audio.split('/')[-1].split('.')[0]
 
-            print(max_score)
+            print('max_score is ', max_score)
             if max_score < score_threshold:
                 score_dict['name'] = "silence"
                 score_dict['value'] = max_score
@@ -389,7 +374,8 @@ class enrollWindow(QWidget):
         with torch.no_grad():
             # feat = loadAndCut(audio)
             feat = loadWAV(audio)
-            feat_enroll = model(feat).detach()
+
+            feat_enroll = torch.from_numpy(exec_net.infer(feat)[out_blob])
             feat_enroll = torch.nn.functional.normalize(feat_enroll, p=2, dim=1)
             feat_enroll_list.append(feat_enroll)
             # embeddings = torch.cat(feat_enroll_list, dim=0)
@@ -402,11 +388,11 @@ class enrollWindow(QWidget):
 
 if __name__ == "__main__":
     warnings.filterwarnings("ignore")
-    SpeakerNetModel = importlib.import_module('models.ResNetSE34V2').__getattribute__('MainModel')
-    global model, model1, model2
     global feat_enroll_list
     global enroll_audios
     global voteQueue
+    global exec_net
+    global input_blob, out_blob
     # global cond
     # cond = Condition()
     voteQueue = Queue(4)
@@ -416,21 +402,15 @@ if __name__ == "__main__":
     for enroll_audio in enroll_audios:
         feat_enroll_list.append(torch.load(enroll_audio))
 
-    model = SpeakerNetModel()
-    model = loadPretrain(model, 'models/pretrain.model')
+    model_xml = "./models/resnet50-v2-7.xml"
+    model_bin = "./models/resnet50-v2-7.bin"
+    ie = IECore()
 
-    model.eval()
+    net = ie.read_network(model=model_xml, weights=model_bin)
+    input_blob = next(iter(net.inputs))
+    out_blob = next(iter(net.outputs))
+    exec_net = ie.load_network(network=net, device_name="CPU")
 
-    model1 = SpeakerNetModel()
-    model1 = loadPretrain(model1, 'models/pretrain.model')
-
-    model1.eval()
-
-    model2 = SpeakerNetModel()
-    model2 = loadPretrain(model2, 'models/pretrain.model')
-
-    model2.eval()
-    # deldir('rec_files/enroll')
     deldir('rec_files/test')
     mkdir('rec_files/enroll')
     mkdir('rec_files/test')

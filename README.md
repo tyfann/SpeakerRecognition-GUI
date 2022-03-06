@@ -46,3 +46,14 @@ python main.py
 
 请说出：
 “你好，这里是（你的名字）正在录音，完毕”
+
+****
+
+### onnx模型转换为openvino下的IR模型
+
+```shell
+cd /opt/intel/openvino_2021/deployment_tools/model_optimizer
+
+python mo_onnx.py --input_model ~/keras-learn/models/resnet50-v2-7.onnx --output_dir ~/keras-learn/models
+```
+

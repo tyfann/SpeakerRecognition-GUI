@@ -1,4 +1,4 @@
-models/
+models/pretrain.model
 .idea/
 rec_files
 testPy/

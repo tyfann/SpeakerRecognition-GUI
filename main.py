@@ -97,7 +97,6 @@ class testWindow(QWidget):
 
             time.sleep(time_interval)
 
-
     def showEvent(self, event):
         self.lineEdit.clear()
         self.textEdit.clear()
@@ -111,7 +110,6 @@ class testWindow(QWidget):
             messageBox.information(self, "警告", "还在录音!", QMessageBox.Ok)
             event.ignore()
             return
-
 
     def consume(self, threadName):
         stat = {}
@@ -178,8 +176,6 @@ class testWindow(QWidget):
         audio = "rec_files/test/" + threadName + "_" + file_name[count] + "_test.wav"
         rec.save(audio)
         # self.silence_remove(audio)
-    
-
 
     def silence_remove_and_test(self, audio):
         f = wave.open(audio, "rb")
@@ -254,7 +250,7 @@ class testWindow(QWidget):
                 return
             l_end = datetime.datetime.now()
             # print("loadAndCut cost: ", l_end - l_start)
-            feat_test = torch.from_numpy(exec_net.infer(feat)[out_blob])
+            feat_test = torch.from_numpy(exec_net.infer(inputs={input_blob: [feamodel(feat).numpy()]})[out_blob])
             m_end = datetime.datetime.now()
             print("model cost: ", m_end - l_end)
             feat_test = torch.nn.functional.normalize(feat_test, p=2, dim=1)
@@ -266,7 +262,6 @@ class testWindow(QWidget):
             for i, enroll_audio in enumerate(enroll_audios):
                 # dist = torch.nn.functional.pairwise_distance(feat_enroll_list[i].unsqueeze(-1),
                 #                                       feat_test.unsqueeze(-1).transpose(0, 2)).detach().numpy()
-
 
                 # score = float(np.round(-dist,4))
                 # print(score)
@@ -375,7 +370,7 @@ class enrollWindow(QWidget):
             # feat = loadAndCut(audio)
             feat = loadWAV(audio)
 
-            feat_enroll = torch.from_numpy(exec_net.infer(feat)[out_blob])
+            feat_enroll = torch.from_numpy(exec_net.infer(feamodel(feat))[out_blob])
             feat_enroll = torch.nn.functional.normalize(feat_enroll, p=2, dim=1)
             feat_enroll_list.append(feat_enroll)
             # embeddings = torch.cat(feat_enroll_list, dim=0)
@@ -393,17 +388,21 @@ if __name__ == "__main__":
     global voteQueue
     global exec_net
     global input_blob, out_blob
+    global feamodel
     # global cond
     # cond = Condition()
     voteQueue = Queue(4)
     feat_enroll_list = []
     enroll_audios = glob.glob('models/data/enroll_embeddings/*.pt')
 
+    fea = importlib.import_module('models.feature').__getattribute__('MainModel')
+    feamodel = fea()
+
     for enroll_audio in enroll_audios:
         feat_enroll_list.append(torch.load(enroll_audio))
 
-    model_xml = "./models/resnet50-v2-7.xml"
-    model_bin = "./models/resnet50-v2-7.bin"
+    model_xml = "./models/pretrain1.xml"
+    model_bin = "./models/pretrain1.bin"
     ie = IECore()
 
     net = ie.read_network(model=model_xml, weights=model_bin)

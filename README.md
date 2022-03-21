@@ -2,7 +2,7 @@
 
 ## Installation（安装）
 
-
+<br/>
 
 ### 基础Audio、torch环境配置：
 
@@ -10,7 +10,7 @@
 pip install -r requirements.txt
 ```
 
-
+<br/>
 
 ### Openvino安装（以MacOS系统为例）：
 
@@ -32,7 +32,7 @@ source /opt/intel/openvino_2021/bin/setupvars.sh
 
 重启当前terminal即可完成环境配置
 
-
+<br/>
 
 ### 模型引入
 
@@ -42,7 +42,7 @@ source /opt/intel/openvino_2021/bin/setupvars.sh
 fea = importlib.import_module('models.feature').__getattribute__('MainModel')
 ```
 
-
+<br/>
 
 ## Preprocessing（预处理）
 
@@ -68,7 +68,7 @@ python mo_onnx.py --input_model ~/model/pretrain.onnx --output_dir ~/model
 
 将此文件夹下的4个文件放入到models文件夹下即可
 
-
+<br/>
 
 ## Running（运行）
 
@@ -80,7 +80,7 @@ python mo_onnx.py --input_model ~/model/pretrain.onnx --output_dir ~/model
 python main.py --model ./models/pretrain1
 ```
 
-
+<br/>
 
 ## Tuning（调参）
 
@@ -100,7 +100,7 @@ python main.py --model ./models/pretrain1
 
 投票队列，长度默认值为`4`
 
-
+<br/>
 
 ## Using（使用）
 

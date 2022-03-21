@@ -2,15 +2,11 @@
 
 ## Installation（安装）
 
-<br/>
-
 ### 基础Audio、torch环境配置：
 
 ```shell
 pip install -r requirements.txt
 ```
-
-<br/>
 
 ### Openvino安装（以MacOS系统为例）：
 
@@ -31,8 +27,6 @@ source /opt/intel/openvino_2021/bin/setupvars.sh
 ```
 
 重启当前terminal即可完成环境配置
-
-<br/>
 
 ### 模型引入
 

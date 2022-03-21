@@ -3,7 +3,7 @@ from PyQt5.QtGui import QKeyEvent, QTextCursor
 from openvino.inference_engine import IECore
 
 from record import Recorder
-
+import argparse
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QPushButton, QPlainTextEdit,
                              QWidget, QMessageBox, QLineEdit)
@@ -39,11 +39,8 @@ def loadAndCut(filename):
     feat = np.stack([wav_data], axis=0).astype(np.float)
     feat = torch.FloatTensor(feat)
 
-    # print(feat.shape[1])
-
     if feat.shape[1] / sr <= 0.5:
         return None
-    # print(filename,'  ',feat.shape[1])
     return feat
 
 
@@ -52,8 +49,7 @@ class mainWindow(QMainWindow):
     def __init__(self):
         super(mainWindow, self).__init__()
         uic.loadUi("ui/mainLayout.ui", self)
-        # self.ui = uic.loadUi("ui/mainLayout.ui")
-        # self.ui.show()
+
 
     def closeEvent(self, e):
         reply = QMessageBox.question(self, '提示',
@@ -218,10 +214,6 @@ class testWindow(QWidget):
         self.__validate(audio)
 
     def slot_endButton(self):
-        # if testQueue.qsize == 0:
-        #     messageBox = QMessageBox(self)
-        #     messageBox.information(self, "警告", "未开始录音!", QMessageBox.Ok)
-        #     return
 
         self._running = False
 
@@ -233,38 +225,23 @@ class testWindow(QWidget):
     def test(self, audio):
         threading._start_new_thread(self.__validate, (audio,))
 
-    # def silence_detect_remove(self, audio):
 
     def __validate(self, audio):
         with torch.no_grad():
-            # l_start = datetime.datetime.now()
-            # feat = loadAndCut(audio)
             feat = loadWAV(audio)
             score_dict = {}
             if not feat.numel():
                 score_dict['name'] = "silence"
                 score_dict['value'] = -1.0
-                # self.lineEdit.setText("unknown person")
                 self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')) + "   " + "silence type1")
                 voteQueue.put(score_dict)
                 return
-            l_end = datetime.datetime.now()
-            # print("loadAndCut cost: ", l_end - l_start)
             feat_test = torch.from_numpy(exec_net.infer(inputs={input_blob: [feamodel(feat).numpy()]})[out_blob])
-            m_end = datetime.datetime.now()
-            print("model cost: ", m_end - l_end)
             feat_test = torch.nn.functional.normalize(feat_test, p=2, dim=1)
-            # f_end = datetime.datetime.now()
-            # print("to Embedding cost: ", f_end - m_end)
 
             max_score = float('-inf')
             max_audio = ''
             for i, enroll_audio in enumerate(enroll_audios):
-                # dist = torch.nn.functional.pairwise_distance(feat_enroll_list[i].unsqueeze(-1),
-                #                                       feat_test.unsqueeze(-1).transpose(0, 2)).detach().numpy()
-
-                # score = float(np.round(-dist,4))
-                # print(score)
 
                 score = float(np.round(- torch.nn.functional.pairwise_distance(feat_enroll_list[i].unsqueeze(-1),
                                                                                feat_test.unsqueeze(-1).transpose(0,
@@ -278,16 +255,13 @@ class testWindow(QWidget):
             if max_score < score_threshold:
                 score_dict['name'] = "silence"
                 score_dict['value'] = max_score
-                # self.lineEdit.setText("unknown person")
                 self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')) + "   " + "silence type2")
             else:
                 score_dict['name'] = max_audio.split('_')[0]
                 score_dict['value'] = max_score
-                # self.lineEdit.setText(max_audio.split('_')[0])
                 self.m_singal.emit(str(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')) + "   " + max_audio)
             voteQueue.put(score_dict)
-            # c_end = datetime.datetime.now()
-            # print("comparison cost: ", c_end - f_end)
+
 
     def show_msg(self, msg):
         self.textEdit.moveCursor(QTextCursor.End)
@@ -354,13 +328,6 @@ class enrollWindow(QWidget):
             event.ignore()
             return
 
-        # reply = QMessageBox.question(self, 'Message',"Are you sure to quit?",
-        #                                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        # # 判断返回值，如果点击的是Yes按钮，我们就关闭组件和应用，否则就忽略关闭事件
-        # if reply == QMessageBox.Yes:
-        #     event.accept()
-        # else:
-        #     event.ignore()
 
     def train(self, audio):
         threading._start_new_thread(self.__enroll, (audio,))
@@ -389,8 +356,7 @@ if __name__ == "__main__":
     global exec_net
     global input_blob, out_blob
     global feamodel
-    # global cond
-    # cond = Condition()
+
     voteQueue = Queue(4)
     feat_enroll_list = []
     enroll_audios = glob.glob('models/data/enroll_embeddings/*.pt')
@@ -401,8 +367,16 @@ if __name__ == "__main__":
     for enroll_audio in enroll_audios:
         feat_enroll_list.append(torch.load(enroll_audio))
 
-    model_xml = "./models/pretrain1.xml"
-    model_bin = "./models/pretrain1.bin"
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", default='./models/pretrain1', help='enter the model path with model name.')
+    args = parser.parse_args()
+
+    model_path = args.model
+
+    model_xml = model_path + ".xml"
+    model_bin = model_path + ".bin"
+
     ie = IECore()
 
     net = ie.read_network(model=model_xml, weights=model_bin)
@@ -424,7 +398,6 @@ if __name__ == "__main__":
     testWin.m_singal.connect(testWin.show_msg)
     testWin.f_signal.connect(testWin.show_final_msg)
 
-    # mainWin.ui.show()
     mainWin.show()
     mainWin.enrollButton.clicked.connect(enrollWin.show)
     mainWin.testButton.clicked.connect(testWin.show)

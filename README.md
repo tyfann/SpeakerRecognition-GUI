@@ -2,11 +2,15 @@
 
 ## Installation（安装）
 
+
+
 ### 基础Audio、torch环境配置：
 
 ```shell
 pip install -r requirements.txt
 ```
+
+
 
 ### Openvino安装（以MacOS系统为例）：
 
@@ -28,6 +32,8 @@ source /opt/intel/openvino_2021/bin/setupvars.sh
 
 重启当前terminal即可完成环境配置
 
+
+
 ### 模型引入
 
 在models文件夹下放入对应的模型，并在main.py中修改下面的代码行：
@@ -35,6 +41,8 @@ source /opt/intel/openvino_2021/bin/setupvars.sh
 ```python
 fea = importlib.import_module('models.feature').__getattribute__('MainModel')
 ```
+
+
 
 ## Preprocessing（预处理）
 
@@ -60,6 +68,8 @@ python mo_onnx.py --input_model ~/model/pretrain.onnx --output_dir ~/model
 
 将此文件夹下的4个文件放入到models文件夹下即可
 
+
+
 ## Running（运行）
 
 ### 指定模型运行所使用的预训练模型
@@ -69,6 +79,8 @@ python mo_onnx.py --input_model ~/model/pretrain.onnx --output_dir ~/model
 ```shell
 python main.py --model ./models/pretrain1
 ```
+
+
 
 ## Tuning（调参）
 
@@ -88,17 +100,19 @@ python main.py --model ./models/pretrain1
 
 投票队列，长度默认值为`4`
 
+
+
 ## Using（使用）
 
 ### 初始界面
 
-<img src="https://tva1.sinaimg.cn/large/e6c9d24egy1h0hbqf9bjpj20vy0sy0tf.jpg" alt="初始界面" style="zoom:50%;" />
+<img src="https://tva1.sinaimg.cn/large/e6c9d24egy1h0hbqf9bjpj20vy0sy0tf.jpg" alt="初始界面" style="zoom:30%;" />
 
 ### 新用户注册音频
 
 点击注册录音按钮，进入如下界面：
 
-<img src="https://tva1.sinaimg.cn/large/e6c9d24egy1h0hbsa0r0rj20ue0pwdgn.jpg" alt="注册页面" style="zoom:50%;" />
+<img src="https://tva1.sinaimg.cn/large/e6c9d24egy1h0hbsa0r0rj20ue0pwdgn.jpg" alt="注册页面" style="zoom:30%;" />
 
 点击开始录音即可打开录音功能，之后点击结束录音即可完成当前用户的音频录入。
 
@@ -106,7 +120,7 @@ python main.py --model ./models/pretrain1
 
 退回初始页面后，点击测试录音即可进入测试界面：
 
-<img src="https://tva1.sinaimg.cn/large/e6c9d24egy1h0hbu90eayj214s0u0t9x.jpg" alt="测试录音页面" style="zoom:50%;" />
+<img src="https://tva1.sinaimg.cn/large/e6c9d24egy1h0hbu90eayj214s0u0t9x.jpg" alt="测试录音页面" style="zoom:30%;" />
 
 如上图所示，左侧的空白文本框显示每一次音频模型判定的结果，右侧的空白文本框则表示4次连续音频的投票结果
 
